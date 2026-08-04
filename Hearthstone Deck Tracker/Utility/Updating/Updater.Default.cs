@@ -14,7 +14,8 @@ namespace Hearthstone_Deck_Tracker.Utility.Updating
 
 		private static bool ShouldCheckForUpdates()
 			=> Config.Instance.CheckForUpdates && Status.UpdaterState != UpdaterState.Available && !Core.Game.IsRunning
-			   && DateTime.Now - _lastUpdateCheck >= new TimeSpan(0, 10, 0);
+			   && DateTime.Now - _lastUpdateCheck >= new TimeSpan(0, 10, 0)
+			   && !LinuxCompat.IsWine;
 
 		public static async void CheckForUpdates(bool force = false)
 		{
@@ -31,6 +32,16 @@ namespace Hearthstone_Deck_Tracker.Utility.Updating
 
 		internal static async void StartUpdate()
 		{
+			// On Linux HDT is installed into a Wine prefix by the scripts in
+			// linux/, and its build comes from this fork rather than from the
+			// upstream releases the updater looks at. Letting it self-update
+			// would replace that build with an upstream one.
+			if(LinuxCompat.IsWine)
+			{
+				Log.Info("Running under Wine, skipping self-update.");
+				return;
+			}
+
 			Log.Info("Starting update...");
 			if(_release == null || DateTime.Now - _lastUpdateCheck > new TimeSpan(0, 10, 0))
 				_release = await GetLatestRelease();

@@ -1,0 +1,107 @@
+# Shared configuration and helpers for the Linux setup scripts.
+# Sourced by the numbered scripts in this directory; not meant to be run directly.
+#
+# Every value here was read off this machine's actual Faugus install. If you
+# move your prefix or rename the Faugus game entry, override via the
+# environment, e.g.  HDT_PREFIX=/somewhere/else ./02-install-dotnet48.sh
+
+# --- Faugus / Proton -------------------------------------------------------
+
+# The Wine prefix Battle.net and Hearthstone live in. HDT *must* run inside
+# this same prefix: HearthMirror reads Hearthstone's Mono heap with
+# ReadProcessMemory, which only works between processes sharing a wineserver.
+HDT_PREFIX="${HDT_PREFIX:-$HOME/Faugus/battlenet}"
+
+# Faugus game id, as it appears in games.json.
+HDT_GAMEID="${HDT_GAMEID:-battlenet}"
+
+# The Faugus flatpak. It bundles wine, winetricks, cabextract and 7z in
+# /app/bin, so nothing has to be installed on the host.
+HDT_FLATPAK="${HDT_FLATPAK:-io.github.Faugus.faugus-launcher}"
+
+# Proton build Faugus is configured to use for this prefix.
+HDT_PROTON="${HDT_PROTON:-$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest}"
+
+# umu-run, as Faugus ships it. The path is given from *inside* the flatpak
+# sandbox, where ~/.var/app/$HDT_FLATPAK/data is mapped to ~/.local/share.
+HDT_UMU_SANDBOX_PATH="${HDT_UMU_SANDBOX_PATH:-$HOME/.local/share/faugus-launcher/umu-run}"
+
+# --- HDT -------------------------------------------------------------------
+
+# Where HDT gets installed, as a Windows path and as the matching host path.
+# Deliberately kept free of spaces so the generated .bat needs no quoting
+# gymnastics.
+HDT_WIN_DIR="${HDT_WIN_DIR:-C:\\HDT}"
+HDT_DIR="${HDT_DIR:-$HDT_PREFIX/drive_c/HDT}"
+HDT_EXE_NAME="Hearthstone Deck Tracker.exe"
+
+# The Faugus "additional application" batch file. Faugus runs this inside the
+# same Proton session as Battle.net, which is exactly the launch we need.
+HDT_BAT="${HDT_BAT:-$HDT_PREFIX/drive_c/Program Files (x86)/Battle.net/faugus-battlenet.bat}"
+
+HDT_BACKUP_DIR="${HDT_BACKUP_DIR:-$HOME/Faugus/hdt-backups}"
+
+# --- helpers ---------------------------------------------------------------
+
+info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn()  { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
+die()   { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Run a command from inside the Faugus flatpak, with the prefix env set up to
+# point at the Battle.net prefix and the flatpak's own wine.
+in_flatpak() {
+	local cmd="$1"; shift
+	flatpak run \
+		--command="$cmd" \
+		--env=WINEPREFIX="$HDT_PREFIX" \
+		--env=WINE=/app/bin/wine \
+		--env=WINESERVER=/app/bin/wineserver \
+		--env=WINEDLLOVERRIDES="mscoree=" \
+		--env=W_OPT_UNATTENDED=1 \
+		--env=DISPLAY="${DISPLAY:-:0}" \
+		"$HDT_FLATPAK" "$@"
+}
+
+require_prefix() {
+	[ -d "$HDT_PREFIX/drive_c" ] \
+		|| die "No Wine prefix at $HDT_PREFIX (expected a drive_c inside it)."
+}
+
+require_flatpak() {
+	flatpak info "$HDT_FLATPAK" >/dev/null 2>&1 \
+		|| die "Faugus flatpak $HDT_FLATPAK is not installed."
+}
+
+# List PIDs actually running inside the prefix.
+#
+# Matching on the path with `pgrep -f` is not good enough: it also matches any
+# shell whose command line happens to mention the path, including the one
+# calling this. Wine puts WINEPREFIX in the environment of every process it
+# starts, so check that instead.
+prefix_pids() {
+	local pid
+	for pid in /proc/[0-9]*; do
+		pid="${pid#/proc/}"
+		[ "$pid" = "$$" ] && continue
+		# The redirect itself fails on other users' processes, and that error
+		# comes from the shell rather than from tr, so the whole group has to
+		# be silenced.
+		if { tr '\0' '\n' < "/proc/$pid/environ"; } 2>/dev/null \
+			| grep -qxF "WINEPREFIX=$HDT_PREFIX"; then
+			echo "$pid"
+		fi
+	done
+}
+
+# winetricks and wineboot rewrite the prefix. Refuse to touch it while
+# anything is still running in there.
+require_prefix_idle() {
+	local pids
+	pids="$(prefix_pids)"
+	if [ -n "$pids" ]; then
+		warn "Processes still running in $HDT_PREFIX:"
+		# shellcheck disable=SC2086
+		ps -o pid=,comm= -p $(echo "$pids" | tr '\n' ' ') >&2 || true
+		die "Close Battle.net and Hearthstone (and let wineserver exit) first."
+	fi
+}
