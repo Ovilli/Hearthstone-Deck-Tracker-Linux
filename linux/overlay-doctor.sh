@@ -71,9 +71,17 @@ for id in "$game" "$overlay"; do
 done
 
 # Position in the stack decides everything. Later in the tree listing == higher.
-order="$(printf '%s\n' "$tree" | grep -oE '0x[0-9a-f]+' | grep -nE "^[0-9]+:($overlay|$game)$" || true)"
-if [ "$(printf '%s\n' "$order" | tail -1 | grep -c "$game")" = "1" ]; then
+# grep -n numbers its *output*; the pattern still has to match the bare id.
+top="$(printf '%s\n' "$tree" | grep -oE '0x[0-9a-f]+' | grep -xF -e "$overlay" -e "$game" | tail -1)"
+if [ "$top" = "$game" ]; then
 	warn "The game is stacked ABOVE the overlay. That is the bug."
+	if xprop -id "$game" _NET_WM_STATE 2>/dev/null | grep -q _NET_WM_STATE_FULLSCREEN; then
+		warn "Hearthstone holds _NET_WM_STATE_FULLSCREEN. Mutter stacks a fullscreen
+window above everything that merely asked to be ABOVE, and unredirects it on top
+of that, so no amount of restacking will put the overlay in front. Set the game
+to Windowed in its graphics options -- windowed, not borderless: Wine requests
+fullscreen for any window that exactly covers the monitor."
+	fi
 else
 	info "The overlay is stacked above the game."
 fi

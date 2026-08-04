@@ -215,11 +215,26 @@ performs — so dragging Hearthstone to another monitor left the overlay behind.
 `LinuxCompat.IsWine`: it re-issues `SetWindowPos(HWND_TOPMOST)` unconditionally
 and repositions whenever the game's rect actually changes.
 
-**Fullscreen is still a problem, and that one is not fixable from inside
-Wine.** Mutter *unredirects* a truly fullscreen window: it hands the screen
-straight to the game and bypasses the compositor, after which nothing can be
-drawn on top regardless of hints. **Set Hearthstone to Windowed or Borderless**
-in its own graphics options.
+**Fullscreen is a third problem, and that one is not fixable from inside Wine
+at all.** Confirmed on this machine:
+
+```
+Hearthstone         _NET_WM_STATE = _NET_WM_STATE_FULLSCREEN
+HearthstoneOverlay  _NET_WM_STATE = _NET_WM_STATE_SKIP_PAGER,
+                                    _NET_WM_STATE_SKIP_TASKBAR,
+                                    _NET_WM_STATE_ABOVE
+```
+
+Wine did its part — the overlay is correctly marked ABOVE — and the game was
+*still* stacked over it. Mutter puts a fullscreen window in a layer above
+anything that merely asked to be ABOVE, and unredirects it as well: the screen
+goes straight to the game, bypassing the compositor, and nothing can be drawn
+on top. `wmctrl -b add,above` changes nothing, because the hint was already
+set.
+
+**Set Hearthstone to Windowed in its graphics options.** Windowed, not
+borderless — Wine requests fullscreen for any window that exactly covers the
+monitor, which lands you back here.
 
 To check what the window manager is actually doing:
 
