@@ -41,11 +41,26 @@ window at arbitrary coordinates or keep it above another application's
 fullscreen window, which is what the overlay does. The Faugus entry already
 sets `PROTON_ENABLE_WAYLAND=0`; also pick "GNOME on Xorg" at the login screen.
 
-**You do not need to install .NET.** The Wine Mono that ships with Proton
-(wine-mono 11.2.0) implements enough WPF to run HDT. Verified with no
-Microsoft .NET in the prefix at all — HDT reported
-`.NET Framework: 533320` and rendered its full UI. `02-install-dotnet48.sh`
-exists but should not be run; see the note in its header.
+**You do need real .NET — because of HearthMirror, not the UI.** Wine Mono
+11.2.0 runs HDT's WPF interface fine; HDT starts, renders and loads card
+definitions with no Microsoft .NET present. What it cannot do is load
+`HearthMirror.dll`, which is compiled from C++/CLI (`ILONLY`, but
+`/clr:pure`). Mono's verifier rejects that IL:
+
+```
+System.InvalidProgramException: Invalid IL code in <Module>:
+std._Variant_raw_visit1<3>._Visit<...MonoClass...MonoObject...MonoStruct...>
+  modopt(System.Runtime.CompilerServices.IsImplicitlyDereferenced)
+```
+
+`<Module>`, the `std::` templates and that `modopt` are all C++/CLI compiler
+output, and `MonoClass`/`MonoObject` are HearthMirror's own types for walking
+Hearthstone's Mono heap. Only Microsoft's CLR executes them. Without real
+.NET, HDT dies the moment it reaches for the game — which looks like "starts,
+then closes instantly".
+
+So run `./02-install-dotnet48.sh`, and note the wineserver warning below: it
+must go through Proton's wine, never the flatpak's.
 
 `Config.cs` already defaults `HearthstoneDirectory` to
 `C:\Program Files (x86)\Hearthstone`, so no path configuration is needed.
@@ -64,7 +79,18 @@ upstream's `build-portable.yml` with the DigiCert signing and VSTest steps
 removed (they need secrets a fork does not have) and the deprecated
 `::set-output` calls replaced.
 
-### 2. Install HDT into the prefix
+### 2. Install .NET Framework 4.8
+
+```sh
+cd linux
+./01-backup-prefix.sh
+./02-install-dotnet48.sh
+```
+
+Needed for HearthMirror, as explained above. Close Battle.net and Hearthstone
+first — the script refuses to run otherwise. 10–20 minutes.
+
+### 3. Install HDT into the prefix
 
 ```sh
 cd linux
@@ -74,7 +100,7 @@ cd linux
 Unpacks to `~/Faugus/battlenet/drive_c/HDT`, i.e. `C:\HDT` in the prefix. It
 handles GitHub's nested artifact zip.
 
-### 3. Have Faugus start HDT with Battle.net
+### 4. Have Faugus start HDT with Battle.net
 
 ```sh
 ./04-hook-faugus.sh

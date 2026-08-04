@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
+# Install real Microsoft .NET Framework 4.8 into the Battle.net Wine prefix.
 #
-#   NOT NEEDED. Do not run this unless you know why you are running it.
+# Required -- but not for the reason first assumed here. Wine Mono 11.2.0
+# runs HDT's WPF UI perfectly well; the UI is not the problem. HearthMirror
+# is. HearthMirror.dll is compiled from C++/CLI (ILONLY, but /clr:pure), and
+# Mono cannot JIT that flavour of IL. Loading it produces
 #
-# This script installs real Microsoft .NET Framework 4.8 into the prefix. It
-# was written on the assumption that Wine Mono implements no WPF and that HDT
-# therefore could not start against it. That assumption is wrong for the Wine
-# Mono shipped with current Proton: wine-mono 11.2.0 runs HDT's WPF UI fine,
-# and HDT has been observed working with no Microsoft .NET present at all
-# (`Framework64/v4.0.30319` holding only its eight Wine stubs).
+#   System.InvalidProgramException: Invalid IL code in <Module>:
+#   std._Variant_raw_visit1<3>._Visit<...MonoClass...MonoObject...>
 #
-# Running this anyway costs 10-20 minutes and ~120 MB, and it broke the prefix
-# badly enough to need a restore the one time it was tried. It is kept only
-# because the Proton-vs-flatpak wineserver lesson encoded in it is worth not
-# losing -- see "The wineserver protocol trap" in README.md.
+# and kills HDT the moment it reaches for the game's memory. Only Microsoft's
+# CLR executes those C++/CLI constructs, so real .NET has to be in the prefix
+# for tracking to work at all.
 #
-# Run 01-backup-prefix.sh first if you run it at all.
+# The install drives winetricks through umu-run and Proton's own wine. Never
+# use the flatpak's wine for this: see "The wineserver protocol trap" in
+# README.md.
+#
+# Expect 10-20 minutes and a ~120 MB download. Run 01-backup-prefix.sh first.
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
