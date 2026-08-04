@@ -196,3 +196,15 @@ token and falls back to re-claiming one. Harmless as far as observed.
 
 **Seeing Wine output.** The Faugus launch path swallows it; run
 `./run-hdt.sh` from a terminal instead.
+
+**Machine-wide lag while playing.** Check `ps -eo pid,pcpu,comm --sort=-pcpu |
+head` before blaming HDT. Two things worth knowing:
+
+- Proton starts `xalia.exe`, an accessibility bridge, and it has been measured
+  burning ~55% of a core across two instances for the whole session while
+  doing nothing useful. Disable it by adding `PROTON_USE_XALIA=0` to the
+  Faugus entry's launch arguments (Edit → Launch arguments), alongside the
+  existing `WINE_SIMULATE_WRITECOPY=1` and `PROTON_ENABLE_WAYLAND=0`. Proton
+  honours the variable if it is already set.
+- HDT itself sits around 45% CPU for the first minute while it processes card
+  definitions, then drops off the top of the list. That part is normal.
