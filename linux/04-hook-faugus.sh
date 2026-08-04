@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Make Faugus start HDT alongside Battle.net.
+# Print the values to enter in Faugus so it starts HDT alongside Battle.net.
 #
-# Faugus already has an "additional application" hook for the battlenet entry
-# pointing at faugus-battlenet.bat, and that file is empty. Filling it in is
-# the cleanest way to launch HDT: Faugus runs the batch file inside the very
-# same Proton session as Battle.net, which is exactly what HearthMirror needs
+# This script deliberately does not write anything. Faugus regenerates the
+# additional-application batch file from the values in its edit dialog every
+# time you save a game (see write_addapp_bat in faugus/utils.py), so a
+# hand-written .bat is overwritten the moment you touch the entry.
+#
+# Letting Faugus own that file is also the better outcome: it emits a single
+# batch file that starts Battle.net and HDT one after the other in the same
+# Proton session, which is precisely the shared wineserver HearthMirror needs
 # in order to read Hearthstone's memory.
 set -euo pipefail
 
@@ -17,34 +21,47 @@ require_prefix
 [ -f "$HDT_DIR/$HDT_EXE_NAME" ] \
 	|| die "HDT is not installed at $HDT_DIR. Run ./03-install-hdt.sh first."
 
-games_json="$HOME/.var/app/$HDT_FLATPAK/data/faugus-launcher/games.json"
+# Faugus writes `start "" "z:{path}"`, and z: maps to / in the prefix, so the
+# dialog wants a Linux path rather than the C:\HDT\... Windows one.
+addapp="$HDT_DIR/$HDT_EXE_NAME"
 
-if [ -f "$HDT_BAT" ] && [ -s "$HDT_BAT" ]; then
-	warn "$HDT_BAT is not empty. Current contents:"
-	sed 's/^/    /' "$HDT_BAT" >&2
-	printf 'Overwrite it? [y/N] '
-	read -r reply
-	case "$reply" in [yY]*) ;; *) die "Aborted." ;; esac
+# The delay is emitted as `ping -n N 127.0.0.1`, which waits about N-1
+# seconds. 30 gives Battle.net a chance to bring its session up first.
+delay=30
+
+cat <<EOF
+
+In Faugus: right-click Battle.net -> Edit, then set
+
+  Additional application   $addapp
+  Delay                    $delay
+  Run first                off
+
+and save. Enter the Linux path exactly as shown, not C:\\HDT\\...
+
+Faugus will then generate:
+
+  $HDT_BAT
+
+containing:
+
+  @echo off
+  start "" "z:$HDT_PREFIX/drive_c/Program Files (x86)/Battle.net/Battle.net.exe"
+  ping -n $delay 127.0.0.1 >nul
+  start "" "z:$addapp"
+
+EOF
+
+if [ -f "$HDT_BAT" ]; then
+	info "Current contents of the batch file:"
+	sed 's/^/    /' "$HDT_BAT"
+	echo
+	warn "Saving the Faugus dialog replaces this file."
 fi
 
-info "Writing $HDT_BAT"
-mkdir -p "$(dirname "$HDT_BAT")"
-# CRLF line endings: this is parsed by Wine's cmd.exe.
-printf '@echo off\r\nstart "" "%s\\%s"\r\n' "$HDT_WIN_DIR" "$HDT_EXE_NAME" > "$HDT_BAT"
-
-echo
-info "Batch file written. One manual step is left, because editing"
-info "games.json while Faugus is running would just be overwritten:"
-echo
-echo "  1. Open Faugus Launcher"
-echo "  2. Right-click the Battle.net entry -> Edit"
-echo "  3. Enable the additional-application option, confirm it points at:"
-echo "       $HDT_BAT"
-echo "  4. Save"
-echo
-echo "Faugus stores this in:"
-echo "  $games_json"
-echo "as the \"addapp_enabled\" field on the \"$HDT_GAMEID\" entry, which is"
-echo "currently empty. \"addapp_bat\" is already set correctly."
-echo
-info "You can also start HDT by hand at any time with ./run-hdt.sh"
+cat <<'EOF'
+Caveat: that batch file runs under Proton, and HDT currently does not start
+under Proton on this setup (see "Known issues" in README.md). If nothing
+appears after the delay, start it separately with ./run-hdt.sh, which uses
+the flatpak's wine instead.
+EOF
