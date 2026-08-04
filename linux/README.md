@@ -293,6 +293,14 @@ goes straight to the game, bypassing the compositor, and nothing can be drawn
 on top. `wmctrl -b add,above` changes nothing, because the hint was already
 set.
 
+**Focus.** `WS_EX_NOACTIVATE` is meant to stop a click on the overlay taking
+focus from the game. X11 never agreed to that: Mutter focuses whatever you
+click. Hearthstone stopped being the foreground window, `HideInBackground` hid
+the overlay, and it only reappeared after clicking the game again.
+`UpdateVisibility` now treats the overlay itself holding the foreground as the
+game holding it, and under Wine the overlay hands the foreground straight back
+to Hearthstone when the window manager gives it away.
+
 ### What fixes it
 
 `overlay-pin.sh` sets `_NET_WM_WINDOW_TYPE_DOCK` on the overlay. A dock is a
