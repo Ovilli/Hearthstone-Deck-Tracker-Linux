@@ -7,11 +7,9 @@ Status: working. HDT builds, installs, runs in the same Proton session as
 Battle.net, reads the game through HearthMirror, and shows its overlay over the
 game at native resolution.
 
-Two things are not optional, and both are explained below:
-
-- **Hearthstone must be set to Windowed**, not fullscreen. 1920x1080 windowed
-  on a 1920x1080 monitor is fine — that is the point of `overlay-pin.sh`.
-- **`./overlay-pin.sh` must be running** alongside the game.
+Fullscreen at native resolution works. One thing is not optional:
+**`overlay-pin.sh` must be running** whenever you play. `./05-autostart-pin.sh`
+installs it as a user service so it always is. Why, below.
 
 ## How this works, and why
 
@@ -135,20 +133,28 @@ To start HDT by hand instead:
 ./run-hdt.sh --wine     # flatpak wine — diagnostics only, cannot track
 ```
 
-### 5. Set the game windowed, and pin the overlay
-
-In Hearthstone: **Options → Graphics → Window Mode: Windowed**. The resolution
-can stay at your monitor's native one.
-
-Then, in a terminal, for as long as you are playing:
+### 5. Pin the overlay
 
 ```sh
 cd linux
-./overlay-pin.sh
+./05-autostart-pin.sh
 ```
 
-Skipping either leaves the overlay stacked underneath the game. See "The
-overlay and the window manager" for why.
+Installs `overlay-pin.sh` as a systemd user service tied to
+`graphical-session.target`: it starts at login, restarts if it dies, and costs
+one window-tree query every five seconds while HDT is not running.
+
+```sh
+./05-autostart-pin.sh --status
+./05-autostart-pin.sh --remove
+journalctl --user -u hdt-overlay-pin.service -f
+```
+
+Or just run `./overlay-pin.sh` in a terminal for the session. Without it the
+overlay ends up underneath the game — see "The overlay and the window manager".
+
+Graphics settings need no special treatment: fullscreen at your monitor's
+native resolution is fine.
 
 ## Verifying tracking
 
@@ -287,38 +293,30 @@ goes straight to the game, bypassing the compositor, and nothing can be drawn
 on top. `wmctrl -b add,above` changes nothing, because the hint was already
 set.
 
-**And Wine misreports a fullscreen window's position on dual monitors.**
-Measured both ways round, the client origin Wine hands out is always the *other*
-monitor's origin:
+### What fixes it
 
-| HDMI-0 (primary) at | game's X position | what HDT was told | where the overlay went |
-|---|---|---|---|
-| `+1920+0` | 1920 | 0 | laptop screen |
-| `+0+0` | 0 | 1920 | laptop screen |
-
-HDT's arithmetic is correct in both rows; it is being given the wrong monitor.
-Rearranging the displays does not help, because the error follows the
-arrangement.
-
-### What actually works
-
-**Windowed, at your monitor's native resolution, with `overlay-pin.sh`
-running.**
-
-```sh
-./overlay-pin.sh    # leave running; Ctrl-C to stop
-```
-
-Windowed keeps Wine's coordinates honest, so the overlay lands on the right
-monitor. Wine still flags a window that exactly covers the monitor as
-fullscreen, but that stops mattering: `overlay-pin.sh` sets
-`_NET_WM_WINDOW_TYPE_DOCK` on the overlay, which is a strictly higher Mutter
-layer than a focused fullscreen window and therefore wins regardless of focus.
-Keeping a non-fullscreen window on top also stops the unredirect.
+`overlay-pin.sh` sets `_NET_WM_WINDOW_TYPE_DOCK` on the overlay. A dock is a
+strictly higher Mutter layer than a focused fullscreen window, so it wins
+regardless of focus, and keeping a non-fullscreen window on top also stops the
+unredirect. `05-autostart-pin.sh` runs it as a user service.
 
 It has to be a loop, and it has to run out here. Win32 has no concept of a dock
 so nothing inside the prefix can ask for one, and Wine rewrites the property
 back to `_NET_WM_WINDOW_TYPE_NORMAL` whenever it resyncs the window's X11 hints.
+
+With that in place, fullscreen at native resolution works. Verified:
+
+```
+Hearthstone         1920x1080 at +1920+0   _NET_WM_STATE_FULLSCREEN
+HearthstoneOverlay  1919x1079 at +1920+0   _NET_WM_WINDOW_TYPE_DOCK
+```
+
+An earlier round of measurements suggested Wine reports a fullscreen window on
+the wrong monitor, and this file used to say windowed mode was mandatory
+because of it. That was wrong: those readings came from a build whose position
+logic never re-ran once the overlay's content was collapsed, so the overlay was
+simply stuck wherever it had last been placed. The self-correcting poll
+described above put it on the right monitor.
 
 To see what the window manager is actually doing:
 

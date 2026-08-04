@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Keep the overlay above a fullscreen Hearthstone, by re-typing its X11 window
-# as a dock. Run it in a terminal alongside the game; Ctrl-C to stop.
+# as a dock. Run it in a terminal alongside the game (Ctrl-C to stop), or let
+# 05-autostart-pin.sh install it as a user service so it is always there.
 #
-# Only needed if you play fullscreen. Windowed at anything below your monitor's
-# resolution needs none of this.
+# Only needed if the game covers the whole monitor -- which includes windowed
+# at your monitor's native resolution, since Wine flags that as fullscreen too.
 #
 # Why a dock. Mutter sorts windows into stacking layers, and a *focused
 # fullscreen* window lands in the same layer as a window that merely asked for
@@ -31,8 +32,15 @@ command -v xprop >/dev/null || die "xprop not found. sudo apt install x11-utils"
 
 info "Pinning the overlay above fullscreen windows. Ctrl-C to stop."
 
+# Walking the whole window tree once a second is wasteful when HDT is not even
+# running, which is most of the time for a service that starts at login. Back
+# off to every few seconds until there is something to pin.
+idle_interval=5
+busy_interval=1
+interval=$busy_interval
+
 last=""
-while sleep 1; do
+while sleep "$interval"; do
 	id="$(xwininfo -root -tree 2>/dev/null \
 		| grep -F '"HearthstoneOverlay"' \
 		| grep -oE '0x[0-9a-f]+' | head -1)" || true
@@ -40,8 +48,10 @@ while sleep 1; do
 	if [ -z "$id" ]; then
 		[ "$last" = "gone" ] || info "Waiting for the overlay window..."
 		last="gone"
+		interval=$idle_interval
 		continue
 	fi
+	interval=$busy_interval
 
 	if xprop -id "$id" _NET_WM_WINDOW_TYPE 2>/dev/null | grep -q _NET_WM_WINDOW_TYPE_DOCK; then
 		[ "$last" = "$id" ] || info "Overlay $id pinned."
