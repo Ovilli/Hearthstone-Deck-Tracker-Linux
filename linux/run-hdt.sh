@@ -1,42 +1,45 @@
 #!/usr/bin/env bash
 # Start HDT by hand inside the Battle.net prefix.
 #
-# Usage: ./run-hdt.sh            # flatpak wine (verified to start HDT)
-#        ./run-hdt.sh --proton   # umu-run/Proton (see the caveat below)
+# Usage: ./run-hdt.sh            # umu-run/Proton — the only one that can track
+#        ./run-hdt.sh --wine     # flatpak wine — diagnostics only, cannot track
 #
-# The routine way to run HDT is 04-hook-faugus.sh, which has Faugus start it
-# together with Battle.net. Use this script to start it separately, or to see
-# the Wine output that the Faugus launch path swallows.
+# The routine way to run HDT is via Faugus, which starts it alongside
+# Battle.net (see 04-hook-faugus.sh). Use this script to start it separately,
+# or to see the Wine output that the Faugus launch path swallows.
 #
-# Two launchers, because they fail in opposite directions:
+#   proton  umu-run with Proton-CachyOS, exactly what Faugus uses for
+#           Battle.net. This is the only usable option: HearthMirror reads
+#           Hearthstone's memory with ReadProcessMemory, and that requires
+#           both processes to share a wineserver.
 #
-#   wine    The flatpak's plain wine-11.0 — the same build that installed
-#           .NET into the prefix. HDT starts and runs correctly under it.
+#   wine    The flatpak's wine. It will start HDT only while no Proton session
+#           is running, and it can never share a wineserver with one --
+#           attempting it fails with
 #
-#   proton  umu-run with Proton-CachyOS, reproducing exactly what Faugus uses
-#           for Battle.net. Architecturally this is what you want, because
-#           HearthMirror reads Hearthstone's memory with ReadProcessMemory and
-#           that only works between processes on a shared wineserver. But on
-#           this setup HDT never reaches its first line under Proton: the
-#           process does not appear and no log is written. Root cause not yet
-#           identified; .NET itself survives the attempt intact.
+#               wine client error:0: version mismatch 932/930
 #
-# So neither option is proven end-to-end yet. `wine` gets you a running
-# tracker; whether it shares a wineserver with a Proton-launched Hearthstone,
-# and therefore whether it actually tracks, still has to be confirmed with the
-# game running. See "Verifying tracking" in README.md.
+#           Both builds call themselves wine-11.0, but their wineserver
+#           protocol versions differ. So HDT started this way cannot see
+#           Hearthstone. Useful for checking that HDT itself runs; useless for
+#           actually tracking a game.
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
 # shellcheck source=lib.sh
 . ./lib.sh
 
-launcher="wine"
+launcher="proton"
 case "${1:-}" in
-	--proton) launcher="proton" ;;
-	--wine|"") ;;
-	*) die "Usage: $0 [--wine|--proton]" ;;
+	--wine) launcher="wine" ;;
+	--proton|"") ;;
+	*) die "Usage: $0 [--proton|--wine]" ;;
 esac
+
+if [ "$launcher" = "wine" ]; then
+	warn "The flatpak's wine cannot share a wineserver with Proton, so HDT"
+	warn "started this way will not see Hearthstone. Diagnostics only."
+fi
 
 require_flatpak
 require_prefix

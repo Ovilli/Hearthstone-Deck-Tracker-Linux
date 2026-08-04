@@ -19,25 +19,8 @@ require_flatpak
 require_prefix
 require_prefix_idle
 
-# The flatpak's wine and the Proton build must be the same Wine version,
-# otherwise winetricks' wineboot will migrate the prefix out from under
-# Proton. On this machine both are wine-11.0.
-flatpak_wine="$(in_flatpak wine --version 2>/dev/null | tail -1 || true)"
-proton_wine="$("$HDT_PROTON/files/bin/wine" --version 2>/dev/null | tail -1 || true)"
-info "flatpak wine: ${flatpak_wine:-unknown}"
-info "Proton wine:  ${proton_wine:-unknown}"
-
-flatpak_major="$(printf '%s' "$flatpak_wine" | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)"
-proton_major="$(printf '%s' "$proton_wine" | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)"
-
-if [ -z "$flatpak_major" ] || [ -z "$proton_major" ]; then
-	warn "Could not determine both Wine versions. Continuing, but if the"
-	warn "prefix misbehaves afterwards, restore it with ./restore-prefix.sh"
-elif [ "$flatpak_major" != "$proton_major" ]; then
-	die "Wine version mismatch: flatpak $flatpak_major vs Proton $proton_major.
-Running winetricks would migrate the prefix and likely break Proton's use of
-it. Update the Faugus flatpak or switch the Faugus runner so both match."
-fi
+[ -x "$HDT_UMU" ] || die "umu-run not found at $HDT_UMU.
+Launch Battle.net from Faugus once so it downloads umu-run, then retry."
 
 if [ ! -d "$HDT_BACKUP_DIR" ]; then
 	warn "No backups found in $HDT_BACKUP_DIR."
@@ -54,14 +37,27 @@ original_winver="$(prefix_winver)"
 info "Prefix reports Windows version: $original_winver (will restore this afterwards)"
 
 info "Removing Wine Mono from the prefix"
-in_flatpak winetricks -q remove_mono || \
+in_proton_winetricks -q remove_mono || \
 	warn "remove_mono returned non-zero; continuing (it may already be gone)."
 
 info "Installing .NET Framework 4.8 (long; downloads ~120 MB)"
-in_flatpak winetricks -q dotnet48
+in_proton_winetricks -q dotnet48
 
 info "Restoring Windows version reporting to $original_winver"
-in_flatpak winetricks -q "$original_winver"
+in_proton_winetricks -q "$original_winver"
+
+info "Checking Proton can still launch programs in the prefix"
+if ! timeout 120 flatpak run --command="$HDT_UMU" \
+	--env=WINEPREFIX="$HDT_PREFIX" --env=GAMEID="$HDT_GAMEID" \
+	--env=PROTONPATH="$HDT_PROTON" --env=PROTON_ENABLE_WAYLAND=0 \
+	--env=DISPLAY="${DISPLAY:-:0}" \
+	"$HDT_FLATPAK" "$HDT_PREFIX/drive_c/windows/system32/winver.exe" \
+	>/dev/null 2>&1
+then
+	warn "winver.exe did not run cleanly under Proton."
+	warn "If Battle.net also fails to start, restore the prefix:"
+	warn "  ./restore-prefix.sh <timestamp>"
+fi
 
 info "Verifying WPF assemblies landed in the prefix"
 found=0

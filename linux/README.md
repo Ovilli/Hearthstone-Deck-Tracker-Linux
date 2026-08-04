@@ -126,8 +126,8 @@ the additional-application option → Save. The script prints this. Editing
 To start HDT separately instead:
 
 ```sh
-./run-hdt.sh            # flatpak wine — verified to start HDT
-./run-hdt.sh --proton   # umu-run/Proton — currently does not start (see below)
+./run-hdt.sh            # umu-run/Proton — the only mode that can track
+./run-hdt.sh --wine     # flatpak wine — diagnostics only, cannot track
 ```
 
 Start the game first — HDT attaches to a running Hearthstone.
@@ -151,40 +151,53 @@ OverlayWindow.SetTopmost >> Hearthstone window not found
 and the Hearthstone directory was auto-detected with no configuration. The
 last line is expected with the game closed.
 
-What remains unproven is whether HDT and Hearthstone end up sharing a
-wineserver. HearthMirror's `ReadProcessMemory` and the overlay's
-`FindWindow`/`GetWindowRect` both require it. Faugus starts Hearthstone under
-Proton; `./run-hdt.sh` starts HDT under the flatpak's wine. Same `WINEPREFIX`,
-so they *should* attach to one wineserver — both are `wine-11.0` — but that
-has not been confirmed with the game actually running.
+That run was under `--wine`, which proves the build and the runtime are sound
+but cannot track anything (see the wineserver section below). Tracking has
+**not** been demonstrated: it requires HDT running under Proton, alongside the
+game, and at the time of writing HDT under Proton had only ever been tried in
+a prefix whose .NET was installed by the wrong wine.
 
-To confirm, launch Battle.net and Hearthstone from Faugus, get into a game,
-then check:
+Once .NET has been installed the correct way, confirm tracking by launching
+Battle.net and Hearthstone from Faugus, getting into a game, then:
 
 ```sh
 . ./lib.sh && ps -o pid=,comm= -p $(prefix_pids | tr '\n' ' ')
 ```
 
-Both Hearthstone and HDT must be listed. Then look at HDT's log for
-`Hearthstone window not found` — it should stop appearing once the game is up.
-If the tracker stays empty while the game runs, the two are on separate
-wineservers and the Faugus `.bat` hook is the path to prefer, since it starts
-HDT inside Battle.net's own session.
+Both Hearthstone and HDT must appear. Then watch HDT's log — the
+`OverlayWindow.SetTopmost >> Hearthstone window not found` line should stop
+once the game is up.
 
-## Known issues
+## The wineserver protocol trap
 
-**HDT does not start under Proton.** `./run-hdt.sh --proton` gets as far as
-`Proton: Executable is a unix path, launching with 'umu.exe'` and then the
-process never appears — no HDT process, no log, nothing in AppData. The page
-faults printed around that point come from the prefix's own startup services
-and show up identically even when the executable path is wrong, so they are
-not the cause. Root cause not identified. The same binary starts fine under
-the flatpak's wine, and .NET survives the attempt intact.
+**Never run winetricks against this prefix with the flatpak's wine.** Doing so
+breaks the prefix for Proton completely — afterwards Proton cannot launch
+anything in it, not Battle.net, not Hearthstone, not even `winver.exe`. The
+prefix looks fine on disk; registry format and prefix version are unchanged.
+It simply stops working.
 
-This matters because the Faugus `.bat` hook from step 5 also runs under
-Proton, just via `cmd.exe` inside an already-established session rather than
-as the top-level process. Whether that difference is enough has not been
-tested.
+The cause is that the two Wine builds are not interchangeable:
+
+```
+wine client error:0: version mismatch 932/930
+```
+
+The flatpak's wine speaks wineserver protocol **932**, Proton-CachyOS speaks
+**930**. Both report `wine-11.0`, so comparing `wine --version` output — which
+an earlier version of `02-install-dotnet48.sh` did — does not detect the
+mismatch at all.
+
+Consequences worth internalising:
+
+- `02-install-dotnet48.sh` drives winetricks through `umu-run winetricks`, so
+  Proton's own wine does the work. `in_proton_winetricks` in `lib.sh` is the
+  only helper that may write to the prefix.
+- `./run-hdt.sh --wine` cannot ever track a game. It starts HDT only when no
+  Proton session is running, and it cannot attach to Proton's wineserver, so
+  it never sees Hearthstone. It exists for checking that HDT itself runs.
+- If Proton stops launching things, restore the prefix:
+  `./restore-prefix.sh <timestamp>`. This is exactly what the backup in step 2
+  is for, and it is not a hypothetical — it has been needed once already.
 
 **Proton can delete the .NET installation.** Proton contains this:
 

@@ -49,8 +49,34 @@ info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Run a command from inside the Faugus flatpak, with the prefix env set up to
-# point at the Battle.net prefix and the flatpak's own wine.
+# Run winetricks against the prefix using *Proton's* wine, via umu-run.
+#
+# This must never be done with the flatpak's own wine. Both builds report
+# "wine-11.0", but their wineserver protocol versions differ (932 for the
+# flatpak, 930 for Proton-CachyOS), and touching the prefix with the wrong one
+# leaves it in a state where Proton can no longer launch anything at all --
+# not the game, not even winver.exe. Comparing `wine --version` strings does
+# not catch this, because the strings are identical.
+#
+# umu-run takes `winetricks` as a positional argument and runs it with the
+# Proton build named by PROTONPATH, which keeps the prefix self-consistent.
+in_proton_winetricks() {
+	flatpak run \
+		--command="$HDT_UMU" \
+		--env=WINEPREFIX="$HDT_PREFIX" \
+		--env=GAMEID="$HDT_GAMEID" \
+		--env=PROTONPATH="$HDT_PROTON" \
+		--env=PROTON_ENABLE_WAYLAND=0 \
+		--env=W_OPT_UNATTENDED=1 \
+		--env=DISPLAY="${DISPLAY:-:0}" \
+		"$HDT_FLATPAK" winetricks "$@"
+}
+
+# Run a command from inside the Faugus flatpak, using the flatpak's own wine.
+#
+# Safe only for things that do not touch the prefix (version probes and the
+# like). For anything that writes to the prefix, use in_proton_winetricks --
+# see the warning above.
 in_flatpak() {
 	local cmd="$1"; shift
 	flatpak run \
