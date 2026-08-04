@@ -133,6 +133,39 @@ Logs live at:
 ~/Faugus/battlenet/drive_c/users/steamuser/AppData/Roaming/HearthstoneDeckTracker/Logs/
 ```
 
+## One Proton session per prefix
+
+Proton locks the prefix for the whole lifetime of a session:
+
+```python
+self.prefix_lock = FileLock(self.path("pfx.lock"), timeout=-1)
+```
+
+`timeout=-1` means wait forever. A second Proton session for the same prefix
+does not fail and does not warn — it blocks silently until the first exits.
+
+The symptom is confusing: starting HDT separately while the game runs looks
+like an absurdly slow launch, and then HDT appears the moment you close
+Hearthstone, exactly when it is no longer useful. Nothing is broken; the
+second launch was queued behind the first the whole time.
+
+This is the reason the Faugus additional-application hook is the right design
+rather than a convenience. It produces a single batch file:
+
+```bat
+@echo off
+start "" "z:...\Battle.net.exe"
+ping -n 30 127.0.0.1 >nul
+start "" "z:...\Hearthstone Deck Tracker.exe"
+```
+
+One `umu-run`, one lock acquisition, both programs inside that one session —
+which is also what puts them on a shared wineserver so HearthMirror can read
+the game's memory.
+
+`run-hdt.sh` refuses to start when anything is already running in the prefix,
+rather than hanging. Use it only with the prefix idle.
+
 ## The wineserver protocol trap
 
 **Never run winetricks against this prefix with the flatpak's wine.** Doing so

@@ -47,10 +47,28 @@ require_prefix
 [ -f "$HDT_DIR/$HDT_EXE_NAME" ] \
 	|| die "HDT is not installed at $HDT_DIR. Run ./03-install-hdt.sh first."
 
-if [ -z "$(prefix_pids)" ]; then
-	warn "Nothing is running in the prefix yet. For tracking to work, start"
-	warn "Battle.net and Hearthstone from Faugus first, so that HDT attaches"
-	warn "to a running game."
+# Proton takes an exclusive lock on the prefix for the whole lifetime of a
+# session -- `FileLock(pfx.lock, timeout=-1)`, i.e. wait forever. A second
+# Proton session for the same prefix does not fail, it blocks silently until
+# the first one exits. Launching HDT this way while the game is running looks
+# like an extremely slow start, and then fires the instant the game is closed.
+#
+# So refuse up front rather than hanging. HDT has to be started *inside* the
+# session that is already running, which is what the Faugus
+# additional-application hook does.
+if [ -n "$(prefix_pids)" ]; then
+	warn "A Proton session is already running in this prefix:"
+	# shellcheck disable=SC2046
+	ps -o pid=,comm= -p $(prefix_pids | tr '\n' ' ') 2>/dev/null \
+		| grep -iE 'hearthstone|battle|agent|\.exe' | head -5 >&2 || true
+	die "Proton holds pfx.lock for the whole session and waits forever for it,
+so this launch would block until you close the game, then start HDT just as
+everything shuts down.
+
+Start HDT from inside the running session instead: configure Faugus's
+additional application (./04-hook-faugus.sh prints the values), which puts
+Battle.net and HDT in one Proton session. Only use this script when nothing
+else is running in the prefix."
 fi
 
 info "Launching $HDT_DIR/$HDT_EXE_NAME via $launcher"
