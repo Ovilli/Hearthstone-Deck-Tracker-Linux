@@ -192,6 +192,48 @@ the game's memory.
 `run-hdt.sh` refuses to start when anything is already running in the prefix,
 rather than hanging. Use it only with the prefix idle.
 
+## The overlay and the window manager
+
+The overlay is a borderless window HDT keeps sized to, and stacked above, the
+Hearthstone window. Both halves of that break under Wine, and both break for
+the same underlying reason: Win32 reports success while X11 does something
+else.
+
+**Stacking.** "Topmost" is a Win32 concept. Wine maps `WS_EX_TOPMOST` onto the
+X11 hint `_NET_WM_STATE_ABOVE`, but the window manager decides the actual
+order, and Mutter raises the focused game back over the overlay every time you
+click it. HDT could not tell: `SetTopmost` checked the `WS_EX_TOPMOST` style
+bit, Wine still reported it as set, so nothing ever restacked. That is why the
+overlay "disappeared" the moment you clicked anything.
+
+**Position.** `HookGameWindow` learns that the game moved via
+`SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE)`. Wine raises that event for
+moves the *application* performs, not for moves the *window manager*
+performs — so dragging Hearthstone to another monitor left the overlay behind.
+
+`OverlayWindow.Wine.cs` fixes both by polling every 500 ms, only when
+`LinuxCompat.IsWine`: it re-issues `SetWindowPos(HWND_TOPMOST)` unconditionally
+and repositions whenever the game's rect actually changes.
+
+**Fullscreen is still a problem, and that one is not fixable from inside
+Wine.** Mutter *unredirects* a truly fullscreen window: it hands the screen
+straight to the game and bypasses the compositor, after which nothing can be
+drawn on top regardless of hints. **Set Hearthstone to Windowed or Borderless**
+in its own graphics options.
+
+To check what the window manager is actually doing:
+
+```sh
+./overlay-doctor.sh          # stacking order, geometry, _NET_WM_STATE
+./overlay-doctor.sh --fix    # pin the overlay above (needs `sudo apt install wmctrl`)
+```
+
+If `--fix` reports the overlay on top and it is *still* invisible, that is the
+unredirect case — switch the game out of fullscreen.
+
+And the session must be X11: on Wayland a client may not place a window at
+arbitrary screen coordinates at all, so none of this can work.
+
 ## The wineserver protocol trap
 
 **Never run winetricks against this prefix with the flatpak's wine.** Doing so
@@ -236,6 +278,14 @@ Deliberately minimal, to stay easy to rebase on upstream.
   would otherwise skip a guard placed in `ShouldCheckForUpdates`. The Squirrel
   updater needs no change: it is behind `#if(SQUIRREL)`, which the `Release`
   configuration used for the portable build does not define.
+- **`Hearthstone Deck Tracker/Windows/OverlayWindow.Wine.cs`** (new) — polls
+  the game window's position and re-asserts topmost, because under Wine the
+  notifications HDT relies on for both are silently unreliable. See "The
+  overlay and the window manager". Kept in its own partial-class file so it
+  rebases cleanly; the only edits to existing overlay code are the two
+  `Start`/`StopWinePolling` calls and the Wine branch in `SetTopmost`.
+- **`Hearthstone Deck Tracker/Utility/User32.cs`** — adds `ForceTopmost`, a
+  `SetWindowPos(HWND_TOPMOST)` that does not first consult the style bit.
 
 ## Troubleshooting
 
@@ -246,8 +296,8 @@ Deliberately minimal, to stay easy to rebase on upstream.
 game. `pgrep -c wineserver` must print 1, and both must appear in
 `prefix_pids`. Starting HDT with `--wine` guarantees this failure.
 
-**Overlay in the wrong place or behind the game.** `echo $XDG_SESSION_TYPE`
-must print `x11`.
+**Overlay behind the game, or left behind on the old monitor.** See "The
+overlay and the window manager" above, and run `./overlay-doctor.sh`.
 
 **`WindowsCryptographicException: Invalid data` in the log.** Wine Mono's
 `ProtectedData`/DPAPI is incomplete, so HDT cannot decrypt a stored HSReplay

@@ -7,6 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using Hearthstone_Deck_Tracker.Enums;
 using Hearthstone_Deck_Tracker.Enums.Hearthstone;
+using Hearthstone_Deck_Tracker.Utility;
 using Hearthstone_Deck_Tracker.Utility.BoardDamage;
 using Hearthstone_Deck_Tracker.Utility.Logging;
 using static System.Windows.Visibility;
@@ -35,6 +36,16 @@ namespace Hearthstone_Deck_Tracker.Windows
 			if(User32.GetHearthstoneWindow() == IntPtr.Zero)
 			{
 				Log.Info("Hearthstone window not found");
+				return;
+			}
+
+			// Wine sets WS_EX_TOPMOST as soon as the request succeeds, so IsTopmost is
+			// always true here and the loop below would exit on the first iteration
+			// having achieved nothing. Push the request through instead; whether it
+			// sticks is up to the window manager, and StartWinePolling() re-asserts it.
+			if(LinuxCompat.IsWine)
+			{
+				User32.ForceTopmost(new WindowInteropHelper(this).Handle);
 				return;
 			}
 

@@ -103,6 +103,32 @@ namespace Hearthstone_Deck_Tracker
 		[DllImport("user32.dll")]
 		internal static extern bool UnhookWinEvent(IntPtr hWinEventHook);
 
+		[DllImport("user32.dll", SetLastError = true)]
+		private static extern bool SetWindowPos(IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+		private static readonly IntPtr HwndTopmost = new IntPtr(-1);
+		private const uint SwpNoSize = 0x0001;
+		private const uint SwpNoMove = 0x0002;
+		private const uint SwpNoActivate = 0x0010;
+
+		/// <summary>
+		/// Re-issues the topmost request, without first checking whether the window already
+		/// carries WS_EX_TOPMOST.
+		/// </summary>
+		/// <remarks>
+		/// Under Wine that check is worthless. Wine sets the style bit as soon as the call
+		/// succeeds, but whether the window actually ends up on top is the X11 window
+		/// manager's decision, and Mutter puts the focused game back above the overlay
+		/// whenever it is clicked. The style bit still reads as set, so anything guarding on
+		/// it never restacks. Calling this pushes a fresh SetWindowPos through to the X11
+		/// driver, which re-applies _NET_WM_STATE_ABOVE and raises the window.
+		/// </remarks>
+		public static void ForceTopmost(IntPtr hwnd)
+		{
+			if(hwnd != IntPtr.Zero)
+				SetWindowPos(hwnd, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+		}
+
 		public static void SetWindowExStyle(IntPtr hwnd, int style) => SetWindowLong(hwnd, GwlExstyle, GetWindowLong(hwnd, GwlExstyle) | style);
 
 		public static void RemoveWindowExStyle(IntPtr hwnd, int style) => SetWindowLong(hwnd, GwlExstyle, GetWindowLong(hwnd, GwlExstyle) & ~style);

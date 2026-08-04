@@ -206,6 +206,7 @@ namespace Hearthstone_Deck_Tracker.Windows
 
 			StartInteractivityUpdates();
 			StartRightClickPolling();
+			StartWinePolling();
 
 			OverlayExtensions.OnToolTipChanged += SetTooltip;
 
@@ -676,6 +677,7 @@ namespace Hearthstone_Deck_Tracker.Windows
 		{
 			StopInteractivityUpdates();
 			StopRightClickPolling();
+			StopWinePolling();
 			UnhookGameWindow();
 			if(_mouseInput != null)
 				UnHookMouse();
