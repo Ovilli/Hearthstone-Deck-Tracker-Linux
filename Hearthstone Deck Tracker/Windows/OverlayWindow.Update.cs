@@ -333,7 +333,10 @@ namespace Hearthstone_Deck_Tracker.Windows
 
 		public void UpdateVisibility()
 		{
-			var isHearthstoneInForeground = User32.IsHearthstoneInForeground();
+			// IsWineOverlayFocused counts as the game being in front: on X11 clicking
+			// the overlay focuses it despite WS_EX_NOACTIVATE, and hiding the overlay
+			// because you clicked it is not useful behaviour. See OverlayWindow.Wine.cs.
+			var isHearthstoneInForeground = User32.IsHearthstoneInForeground() || IsWineOverlayFocused();
 
 			//hide the overlay depending on options
 			var visible = !((Config.Instance.HideInBackground && !isHearthstoneInForeground && !_game.IsInMenu)

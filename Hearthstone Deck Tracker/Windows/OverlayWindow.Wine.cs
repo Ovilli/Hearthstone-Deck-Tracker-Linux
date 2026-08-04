@@ -38,10 +38,46 @@ namespace Hearthstone_Deck_Tracker.Windows
 		private bool _runWinePolling;
 		private bool _loggedWineMismatch;
 
+		/// <summary>
+		/// True when the overlay itself holds the foreground, under Wine.
+		/// </summary>
+		/// <remarks>
+		/// Treated as equivalent to Hearthstone holding it. The overlay carries
+		/// WS_EX_NOACTIVATE precisely so that clicking it does not steal focus, but
+		/// that is a Win32 promise and X11 never made it: Mutter focuses whatever you
+		/// click. Without this, clicking anything on the overlay drops
+		/// IsHearthstoneInForeground to false, HideInBackground hides the overlay, and
+		/// you have to click the game again to get it back.
+		/// </remarks>
+		public bool IsWineOverlayFocused()
+		{
+			if(!LinuxCompat.IsWine)
+				return false;
+			var hwnd = new WindowInteropHelper(this).Handle;
+			return hwnd != IntPtr.Zero && User32.GetForegroundWindow() == hwnd;
+		}
+
+		/// <summary>
+		/// Hands the foreground back to Hearthstone after the window manager has given
+		/// it to the overlay.
+		/// </summary>
+		/// <remarks>
+		/// SetForegroundWindow rather than User32.BringHsToForeground: the latter
+		/// synthesises Alt keypresses to work around Windows' foreground-lock rules,
+		/// and those would be delivered to the game as real input.
+		/// </remarks>
+		private void OnWineActivated(object sender, EventArgs e)
+		{
+			var hs = User32.GetHearthstoneWindow();
+			if(hs != IntPtr.Zero)
+				User32.SetForegroundWindow(hs);
+		}
+
 		private async void StartWinePolling()
 		{
 			if(!LinuxCompat.IsWine || _runWinePolling)
 				return;
+			Activated += OnWineActivated;
 			_runWinePolling = true;
 			Log.Info($"Running under Wine: polling game window position and stacking every {WinePollInterval}ms");
 			while(_runWinePolling)
@@ -60,7 +96,11 @@ namespace Hearthstone_Deck_Tracker.Windows
 			}
 		}
 
-		private void StopWinePolling() => _runWinePolling = false;
+		private void StopWinePolling()
+		{
+			_runWinePolling = false;
+			Activated -= OnWineActivated;
+		}
 
 		private void PollWineWindowState()
 		{
