@@ -127,18 +127,24 @@ require_flatpak() {
 # shell whose command line happens to mention the path, including the one
 # calling this. Wine puts WINEPREFIX in the environment of every process it
 # starts, so check that instead.
+#
+# The value cannot be compared literally. Faugus lays the prefix out
+# Proton-style, with a `pfx -> .` symlink inside it, and Proton passes
+# WINEPREFIX=<prefix>/pfx/ — trailing slash and all. So resolve both sides to
+# a real path before comparing.
 prefix_pids() {
-	local pid
+	local pid want got
+	want="$(readlink -f "$HDT_PREFIX")"
 	for pid in /proc/[0-9]*; do
 		pid="${pid#/proc/}"
 		[ "$pid" = "$$" ] && continue
 		# The redirect itself fails on other users' processes, and that error
 		# comes from the shell rather than from tr, so the whole group has to
 		# be silenced.
-		if { tr '\0' '\n' < "/proc/$pid/environ"; } 2>/dev/null \
-			| grep -qxF "WINEPREFIX=$HDT_PREFIX"; then
-			echo "$pid"
-		fi
+		got="$({ tr '\0' '\n' < "/proc/$pid/environ"; } 2>/dev/null \
+			| grep -m1 '^WINEPREFIX=' | cut -d= -f2-)"
+		[ -n "$got" ] || continue
+		[ "$(readlink -f "$got")" = "$want" ] && echo "$pid"
 	done
 }
 

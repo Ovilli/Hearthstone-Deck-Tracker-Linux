@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Install real Microsoft .NET Framework 4.8 into the Battle.net Wine prefix.
 #
-# Why this is needed: the prefix currently has Wine Mono, which fakes the
-# .NET registry keys but implements no WPF. HDT is a WPF application, so it
-# cannot start until PresentationFramework/PresentationCore are actually
-# present. Wine Mono has to come out before the Microsoft installer will run.
+#   NOT NEEDED. Do not run this unless you know why you are running it.
 #
-# This is the longest and most failure-prone step of the whole setup: it
-# downloads ~120 MB and runs a chain of Microsoft installers under Wine.
-# Expect 10-20 minutes. Run 01-backup-prefix.sh first.
+# This script installs real Microsoft .NET Framework 4.8 into the prefix. It
+# was written on the assumption that Wine Mono implements no WPF and that HDT
+# therefore could not start against it. That assumption is wrong for the Wine
+# Mono shipped with current Proton: wine-mono 11.2.0 runs HDT's WPF UI fine,
+# and HDT has been observed working with no Microsoft .NET present at all
+# (`Framework64/v4.0.30319` holding only its eight Wine stubs).
+#
+# Running this anyway costs 10-20 minutes and ~120 MB, and it broke the prefix
+# badly enough to need a restore the one time it was tried. It is kept only
+# because the Proton-vs-flatpak wineserver lesson encoded in it is worth not
+# losing -- see "The wineserver protocol trap" in README.md.
+#
+# Run 01-backup-prefix.sh first if you run it at all.
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
