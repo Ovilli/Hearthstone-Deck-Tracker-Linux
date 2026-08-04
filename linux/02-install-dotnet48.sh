@@ -47,6 +47,12 @@ if [ ! -d "$HDT_BACKUP_DIR" ]; then
 	case "$reply" in [yY]*) ;; *) die "Aborted." ;; esac
 fi
 
+# The dotnet verbs move the prefix's Windows version around (dotnet40 wants
+# winxp, dotnet48 wants win7) and leave it wherever they finished. Remember
+# what it was so it can be put back exactly, rather than guessed at.
+original_winver="$(prefix_winver)"
+info "Prefix reports Windows version: $original_winver (will restore this afterwards)"
+
 info "Removing Wine Mono from the prefix"
 in_flatpak winetricks -q remove_mono || \
 	warn "remove_mono returned non-zero; continuing (it may already be gone)."
@@ -54,10 +60,8 @@ in_flatpak winetricks -q remove_mono || \
 info "Installing .NET Framework 4.8 (long; downloads ~120 MB)"
 in_flatpak winetricks -q dotnet48
 
-# The dotnet48 verb leaves the prefix reporting Windows 7. Battle.net and
-# Hearthstone both expect Windows 10.
-info "Restoring Windows 10 version reporting"
-in_flatpak winetricks -q win10
+info "Restoring Windows version reporting to $original_winver"
+in_flatpak winetricks -q "$original_winver"
 
 info "Verifying WPF assemblies landed in the prefix"
 found=0

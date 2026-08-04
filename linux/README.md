@@ -126,10 +126,88 @@ the additional-application option → Save. The script prints this. Editing
 To start HDT separately instead:
 
 ```sh
-./run-hdt.sh
+./run-hdt.sh            # flatpak wine — verified to start HDT
+./run-hdt.sh --proton   # umu-run/Proton — currently does not start (see below)
 ```
 
 Start the game first — HDT attaches to a running Hearthstone.
+
+## Verifying tracking
+
+Getting HDT to *run* and getting it to *track* are two different things, and
+only the first is confirmed on this machine.
+
+HDT starts correctly under the flatpak's plain `wine-11.0` — the same build
+that installed .NET. Its log shows the runtime and prefix are healthy:
+
+```
+HDT: 1.54.4.1, Operating System: Microsoft Windows 11 22000, .NET Framework: 528049
+CardDefsManager >> Loaded initial base CardDefs: Count=35320
+LogWatcherManager.Start >> Using Hearthstone log directory 'C:\Program Files (x86)\Hearthstone\Logs'
+OverlayWindow.SetTopmost >> Hearthstone window not found
+```
+
+`528049` is .NET 4.8, the Windows version is the prefix's original Windows 11,
+and the Hearthstone directory was auto-detected with no configuration. The
+last line is expected with the game closed.
+
+What remains unproven is whether HDT and Hearthstone end up sharing a
+wineserver. HearthMirror's `ReadProcessMemory` and the overlay's
+`FindWindow`/`GetWindowRect` both require it. Faugus starts Hearthstone under
+Proton; `./run-hdt.sh` starts HDT under the flatpak's wine. Same `WINEPREFIX`,
+so they *should* attach to one wineserver — both are `wine-11.0` — but that
+has not been confirmed with the game actually running.
+
+To confirm, launch Battle.net and Hearthstone from Faugus, get into a game,
+then check:
+
+```sh
+. ./lib.sh && ps -o pid=,comm= -p $(prefix_pids | tr '\n' ' ')
+```
+
+Both Hearthstone and HDT must be listed. Then look at HDT's log for
+`Hearthstone window not found` — it should stop appearing once the game is up.
+If the tracker stays empty while the game runs, the two are on separate
+wineservers and the Faugus `.bat` hook is the path to prefer, since it starts
+HDT inside Battle.net's own session.
+
+## Known issues
+
+**HDT does not start under Proton.** `./run-hdt.sh --proton` gets as far as
+`Proton: Executable is a unix path, launching with 'umu.exe'` and then the
+process never appears — no HDT process, no log, nothing in AppData. The page
+faults printed around that point come from the prefix's own startup services
+and show up identically even when the executable path is wrong, so they are
+not the cause. Root cause not identified. The same binary starts fine under
+the flatpak's wine, and .NET survives the attempt intact.
+
+This matters because the Faugus `.bat` hook from step 5 also runs under
+Proton, just via `cmd.exe` inside an already-established session rather than
+as the top-level process. Whether that difference is enough has not been
+tested.
+
+**Proton can delete the .NET installation.** Proton contains this:
+
+```python
+if file_exists(prefix + "/drive_c/windows/Microsoft.NET/NETFXRepair.exe") and \
+        file_is_wine_builtin_dll(prefix + "/drive_c/windows/system32/mscoree.dll"):
+    log("Broken .NET installation detected, switching to wine-mono.")
+    shutil.rmtree(prefix + "/drive_c/windows/Microsoft.NET")
+```
+
+`NETFXRepair.exe` **is** present after installing .NET 4.8, so the only thing
+standing between the prefix and having its entire `Microsoft.NET` directory
+deleted is `mscoree.dll` staying a native file rather than a Wine builtin.
+It is currently native and has survived several Proton launches. If HDT ever
+stops starting, check this first:
+
+```sh
+file ~/Faugus/battlenet/drive_c/windows/system32/mscoree.dll
+```
+
+It must say `PE32+ executable`. A symlink into the Proton directory means the
+runtime is about to be, or has already been, wiped — re-run
+`./02-install-dotnet48.sh`.
 
 ## Source changes in this fork
 
@@ -141,9 +219,12 @@ Deliberately minimal, so the fork stays easy to rebase on upstream.
   updater is disabled under Wine. It checks *upstream* HearthSim releases, so
   on a fork build it would offer to replace your build with an upstream one,
   and `HDTUpdate.exe` swapping files underneath a running Wine process is a
-  good way to corrupt the install. The Squirrel updater needs no change: it
-  is behind `#if(SQUIRREL)`, and the portable build uses the `Release`
-  configuration, which does not define that symbol.
+  good way to corrupt the install. The check sits at the top of
+  `CheckForUpdates`, ahead of the `force` parameter, because
+  `Core.Initialize` passes `force: true` and would otherwise skip straight
+  past a guard placed in `ShouldCheckForUpdates`. The Squirrel updater needs
+  no change: it is behind `#if(SQUIRREL)`, and the portable build uses the
+  `Release` configuration, which does not define that symbol.
 
 Nothing else was touched. Which of the remaining Win32-dependent pieces —
 tray icon, global hotkeys, `SetWinEventHook` — misbehave under Wine is worth

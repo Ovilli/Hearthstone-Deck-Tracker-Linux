@@ -14,11 +14,15 @@ namespace Hearthstone_Deck_Tracker.Utility.Updating
 
 		private static bool ShouldCheckForUpdates()
 			=> Config.Instance.CheckForUpdates && Status.UpdaterState != UpdaterState.Available && !Core.Game.IsRunning
-			   && DateTime.Now - _lastUpdateCheck >= new TimeSpan(0, 10, 0)
-			   && !LinuxCompat.IsWine;
+			   && DateTime.Now - _lastUpdateCheck >= new TimeSpan(0, 10, 0);
 
 		public static async void CheckForUpdates(bool force = false)
 		{
+			// Checked ahead of `force`, which Core.Initialize passes as true:
+			// the Wine build is installed from this fork by the scripts in
+			// linux/, so an upstream release is never something to offer.
+			if(LinuxCompat.IsWine)
+				return;
 			if(!force && !ShouldCheckForUpdates())
 				return;
 			_lastUpdateCheck = DateTime.Now;

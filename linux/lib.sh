@@ -22,9 +22,11 @@ HDT_FLATPAK="${HDT_FLATPAK:-io.github.Faugus.faugus-launcher}"
 # Proton build Faugus is configured to use for this prefix.
 HDT_PROTON="${HDT_PROTON:-$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest}"
 
-# umu-run, as Faugus ships it. The path is given from *inside* the flatpak
-# sandbox, where ~/.var/app/$HDT_FLATPAK/data is mapped to ~/.local/share.
-HDT_UMU_SANDBOX_PATH="${HDT_UMU_SANDBOX_PATH:-$HOME/.local/share/faugus-launcher/umu-run}"
+# umu-run, as Faugus ships it: a Python zipapp downloaded into the flatpak's
+# data directory. The flatpak sets XDG_DATA_HOME to this same real host path
+# rather than remapping it to ~/.local/share, so the path is identical inside
+# and outside the sandbox.
+HDT_UMU="${HDT_UMU:-$HOME/.var/app/$HDT_FLATPAK/data/faugus-launcher/umu-run}"
 
 # --- HDT -------------------------------------------------------------------
 
@@ -60,6 +62,27 @@ in_flatpak() {
 		--env=W_OPT_UNATTENDED=1 \
 		--env=DISPLAY="${DISPLAY:-:0}" \
 		"$HDT_FLATPAK" "$@"
+}
+
+# Report the prefix's Windows version as a winetricks verb name.
+#
+# winetricks has no getter for this, and the dotnet verbs change the version
+# behind your back (dotnet40 wants winxp, dotnet48 wants win7), so the value
+# has to be captured before installing and put back afterwards. Read it out
+# of the registry and map the build number onto the verb.
+prefix_winver() {
+	local build
+	build="$(grep -a -A12 '^\[Software\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\]' \
+		"$HDT_PREFIX/system.reg" 2>/dev/null \
+		| grep -a -m1 '"CurrentBuild"=' | sed 's/.*"\([0-9]*\)".*/\1/')"
+	case "$build" in
+		22000|2[2-9][0-9][0-9][0-9]) echo win11 ;;
+		1[0-9][0-9][0-9][0-9])       echo win10 ;;
+		9600)                        echo win81 ;;
+		9200)                        echo win8  ;;
+		7601)                        echo win7  ;;
+		*)                           echo win10 ;;
+	esac
 }
 
 require_prefix() {
