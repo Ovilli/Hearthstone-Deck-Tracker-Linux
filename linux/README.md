@@ -3,8 +3,15 @@
 Setup for Debian + GNOME, with Hearthstone installed through the Blizzard app
 under [Faugus Launcher](https://github.com/Faugus/faugus-launcher).
 
-Status: HDT builds, installs, and runs in the same Proton session as
-Battle.net. Tracking a live game is the one thing still to be confirmed.
+Status: working. HDT builds, installs, runs in the same Proton session as
+Battle.net, reads the game through HearthMirror, and shows its overlay over the
+game at native resolution.
+
+Two things are not optional, and both are explained below:
+
+- **Hearthstone must be set to Windowed**, not fullscreen. 1920x1080 windowed
+  on a 1920x1080 monitor is fine — that is the point of `overlay-pin.sh`.
+- **`./overlay-pin.sh` must be running** alongside the game.
 
 ## How this works, and why
 
@@ -128,6 +135,21 @@ To start HDT by hand instead:
 ./run-hdt.sh --wine     # flatpak wine — diagnostics only, cannot track
 ```
 
+### 5. Set the game windowed, and pin the overlay
+
+In Hearthstone: **Options → Graphics → Window Mode: Windowed**. The resolution
+can stay at your monitor's native one.
+
+Then, in a terminal, for as long as you are playing:
+
+```sh
+cd linux
+./overlay-pin.sh
+```
+
+Skipping either leaves the overlay stacked underneath the game. See "The
+overlay and the window manager" for why.
+
 ## Verifying tracking
 
 HDT *running* and HDT *tracking* are different things.
@@ -148,10 +170,23 @@ LogWatcherManager.Start >> Using Hearthstone log directory 'C:\Program Files (x8
 OverlayWindow.SetTopmost >> Hearthstone window not found
 ```
 
-The last line is expected while the game is closed. **Still to confirm:**
-launch Hearthstone, get into a match, and check that line stops appearing and
-that cards actually track. That exercises HearthMirror's memory reads and the
-overlay, neither of which has been observed working yet.
+The last line is expected while the game is closed.
+
+With the game running, these confirm HearthMirror is reading its memory — the
+part that needs real .NET and a shared wineserver:
+
+```
+HearthMirror RPC [client]
+Helper.GetCurrentRegion >> Region: EU
+GameV2.CurrentMode >> COLLECTIONMANAGER
+CollectionHelper.UpdateCollection >> Updated collection!
+```
+
+And this confirms the Wine-specific overlay handling is active:
+
+```
+OverlayWindow.StartWinePolling >> Running under Wine: polling game window position and stacking every 500ms
+```
 
 Logs live at:
 
@@ -211,9 +246,29 @@ overlay "disappeared" the moment you clicked anything.
 moves the *application* performs, not for moves the *window manager*
 performs — so dragging Hearthstone to another monitor left the overlay behind.
 
+`UpdatePosition` would not have helped even if the event had arrived. It opens
+with
+
+```csharp
+if(hsRect.Height == 0 || (!IsContentVisible && CapturableOverlay == null))
+    return;
+```
+
+and in the menus the overlay's content is collapsed, so `IsContentVisible` is
+false and the call does nothing — which is exactly when you are most likely to
+drag the game somewhere.
+
 `OverlayWindow.Wine.cs` fixes both by polling every 500 ms, only when
-`LinuxCompat.IsWine`: it re-issues `SetWindowPos(HWND_TOPMOST)` unconditionally
-and repositions whenever the game's rect actually changes.
+`LinuxCompat.IsWine`. It re-issues `SetWindowPos(HWND_TOPMOST)` unconditionally,
+and compares the overlay's *own* `Left`/`Top`/`Width`/`Height` against the
+game's client rect rather than watching for the game to change — so drift
+corrects itself whatever caused it. It calls `SetRect` directly, which carries
+no visibility guard, and only layers `UpdatePosition` on top when there is
+content to lay out. A mismatch is logged once per episode:
+
+```
+Overlay at 9,30 1911x1045 does not match game at 1924,33 1911x1045; repositioning
+```
 
 **Fullscreen is a third problem, and that one is not fixable from inside Wine
 at all.** Confirmed on this machine:
@@ -232,19 +287,45 @@ goes straight to the game, bypassing the compositor, and nothing can be drawn
 on top. `wmctrl -b add,above` changes nothing, because the hint was already
 set.
 
-**Set Hearthstone to Windowed in its graphics options.** Windowed, not
-borderless — Wine requests fullscreen for any window that exactly covers the
-monitor, which lands you back here.
+**And Wine misreports a fullscreen window's position on dual monitors.**
+Measured both ways round, the client origin Wine hands out is always the *other*
+monitor's origin:
 
-To check what the window manager is actually doing:
+| HDMI-0 (primary) at | game's X position | what HDT was told | where the overlay went |
+|---|---|---|---|
+| `+1920+0` | 1920 | 0 | laptop screen |
+| `+0+0` | 0 | 1920 | laptop screen |
+
+HDT's arithmetic is correct in both rows; it is being given the wrong monitor.
+Rearranging the displays does not help, because the error follows the
+arrangement.
+
+### What actually works
+
+**Windowed, at your monitor's native resolution, with `overlay-pin.sh`
+running.**
+
+```sh
+./overlay-pin.sh    # leave running; Ctrl-C to stop
+```
+
+Windowed keeps Wine's coordinates honest, so the overlay lands on the right
+monitor. Wine still flags a window that exactly covers the monitor as
+fullscreen, but that stops mattering: `overlay-pin.sh` sets
+`_NET_WM_WINDOW_TYPE_DOCK` on the overlay, which is a strictly higher Mutter
+layer than a focused fullscreen window and therefore wins regardless of focus.
+Keeping a non-fullscreen window on top also stops the unredirect.
+
+It has to be a loop, and it has to run out here. Win32 has no concept of a dock
+so nothing inside the prefix can ask for one, and Wine rewrites the property
+back to `_NET_WM_WINDOW_TYPE_NORMAL` whenever it resyncs the window's X11 hints.
+
+To see what the window manager is actually doing:
 
 ```sh
 ./overlay-doctor.sh          # stacking order, geometry, _NET_WM_STATE
-./overlay-doctor.sh --fix    # pin the overlay above (needs `sudo apt install wmctrl`)
+./overlay-doctor.sh --fix    # add _NET_WM_STATE_ABOVE (needs `sudo apt install wmctrl`)
 ```
-
-If `--fix` reports the overlay on top and it is *still* invisible, that is the
-unredirect case — switch the game out of fullscreen.
 
 And the session must be X11: on Wayland a client may not place a window at
 arbitrary screen coordinates at all, so none of this can work.
