@@ -772,6 +772,17 @@ namespace Hearthstone_Deck_Tracker
 				Log.Warn("Could not find Hearthstone process");
 				return null;
 			}
+			// Wine Mono does not implement WMI, and querying Win32_Process
+			// takes the runtime down rather than raising something the catch
+			// below could handle: HDT dies the moment Hearthstone starts, with
+			// the log ending mid-line. Returning null here is the documented
+			// no-command-line path -- GetLogConfigPath falls back to the
+			// default log.config location, which is the correct one for a
+			// normal live client. Only non-default product UIDs (PTR and
+			// similar) would be missed.
+			if(LinuxCompat.IsWine)
+				return null;
+
 			try
 			{
 				var searcher = new ManagementObjectSearcher($"SELECT CommandLine FROM Win32_Process WHERE ProcessId={proc.Id}");
@@ -1237,6 +1248,13 @@ namespace Hearthstone_Deck_Tracker
 
 		public static bool IsIntelGpu()
 		{
+			// Same Wine Mono WMI problem as GetHearthstoneCommandLine: the
+			// query crashes the runtime instead of throwing, so the catch
+			// below is no protection. Reporting "not Intel" only skips an
+			// Intel-specific rendering workaround.
+			if(LinuxCompat.IsWine)
+				return false;
+
 			try
 			{
 				// Query for GPU details using WMI (Windows Management Instrumentation)

@@ -19,8 +19,30 @@ HDT_GAMEID="${HDT_GAMEID:-battlenet}"
 # /app/bin, so nothing has to be installed on the host.
 HDT_FLATPAK="${HDT_FLATPAK:-io.github.Faugus.faugus-launcher}"
 
-# Proton build Faugus is configured to use for this prefix.
-HDT_PROTON="${HDT_PROTON:-$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest}"
+# Proton build Faugus is configured to use for this prefix. Read out of
+# Faugus's own games.json rather than hardcoded, so that changing the runner
+# in the Faugus UI does not silently leave these scripts launching HDT with a
+# different Proton than the game. (Proton-CachyOS cannot launch anything in
+# this prefix; GE-Proton10-34 works.)
+_faugus_runner() {
+	python3 - "$HOME/.var/app/$HDT_FLATPAK/data/faugus-launcher/games.json" "$HDT_GAMEID" <<'PY' 2>/dev/null
+import json, sys
+try:
+    games = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+for g in games:
+    if g.get("gameid") == sys.argv[2]:
+        print(g.get("runner", ""))
+        break
+PY
+}
+
+if [ -z "${HDT_PROTON:-}" ]; then
+	_runner="$(_faugus_runner)"
+	[ -n "$_runner" ] || _runner="GE-Proton10-34"
+	HDT_PROTON="$HOME/.local/share/Steam/compatibilitytools.d/$_runner"
+fi
 
 # umu-run, as Faugus ships it: a Python zipapp downloaded into the flatpak's
 # data directory. The flatpak sets XDG_DATA_HOME to this same real host path
