@@ -3,11 +3,20 @@
 
 Hearthstone Deck Tracker is an automatic deck tracker and deck manager for Hearthstone.
 
+> **Running Linux?** This fork adds the tooling and the handful of source
+> patches needed to run HDT alongside Hearthstone under Wine/Proton, with
+> tracking and the in-game overlay working. Start at
+> **[linux/README.md](linux/README.md)** — it covers the build, the prefix
+> setup, and the window-manager quirks, and explains why each step is there.
+> Everything below is upstream's Windows documentation.
+
 ## Installation
 - Requirements:
   - Windows Vista or higher
   - .NET Framework 4.5 or higher
 - [Download and run the installer](https://hsdecktracker.net/download/).
+
+On Linux, ignore the installer above: see [linux/README.md](linux/README.md).
 
 ## Community & Troubleshooting
 - [Follow HDT on X](https://twitter.com/hsdecktracker)
