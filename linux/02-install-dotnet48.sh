@@ -49,6 +49,28 @@ info "Removing Wine Mono from the prefix"
 in_proton_winetricks -q remove_mono || \
 	warn "remove_mono returned non-zero; continuing (it may already be gone)."
 
+# umu-run refuses to reapply a verb it believes is already present, and it
+# decides that by reading $WINEPREFIX/winetricks.log (umu_util.py, "winetricks
+# verb '...' is already installed"). It checks before winetricks ever runs, so
+# passing --force through does not help.
+#
+# That log lives at the prefix root, which restore-prefix.sh does not touch --
+# it reverts drive_c/windows and the registry hives, both elsewhere. So after
+# a failed install followed by a restore, the log still claims dotnet48 while
+# the prefix contains none of it, and the install can never be retried.
+#
+# Drop the stale lines when the files they claim are demonstrably absent. The
+# prefix is the authority, not the log.
+if [ -f "$HDT_PREFIX/winetricks.log" ] \
+	&& grep -qx "dotnet48" "$HDT_PREFIX/winetricks.log" \
+	&& ! find "$HDT_PREFIX/drive_c/windows" -iname clr.dll -print -quit 2>/dev/null | grep -q .
+then
+	warn "winetricks.log claims dotnet48 is installed, but clr.dll is absent."
+	warn "Clearing the stale entries so the install can proceed."
+	cp -a "$HDT_PREFIX/winetricks.log" "$HDT_PREFIX/winetricks.log.bak"
+	grep -vxE "dotnet4[08]" "$HDT_PREFIX/winetricks.log.bak" > "$HDT_PREFIX/winetricks.log"
+fi
+
 info "Installing .NET Framework 4.8 (long; downloads ~120 MB)"
 in_proton_winetricks -q dotnet48
 
