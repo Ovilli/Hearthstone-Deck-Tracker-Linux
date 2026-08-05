@@ -1,3 +1,31 @@
+## **Release v1.55.1 - 2026-08-05**
+**Hearthstone**:
+- Added counter for Dragoncaller Alanna.
+- Added counter for Crystal Stag.
+- Added counter for Knight of the Wild and Frostsaber Matriarch.
+
+**Battlegrounds**:
+- Improve handling of MMR reset in session widget.
+- Fixed a number of Bob's Buddy predictions caused by the new Battlegrounds Season.
+
+**Streaming:**
+- Fixed the opponent's hero power not being hoverable in the Twitch Extension.
+
+## **Release v1.55.0 - 2026-08-04**
+**Updated for Hearthstone 36.2**
+
+**Hearthstone**:
+- Fixed Tidepool Pupil, Commander Sivara and similar cards not showing their stored cards when hovered.
+
+*Because you have been asking us: We will intentionally not be adding support for showing Watfin's suspicious card. We believe our deck tracker should enhance playing the game, not tell you what to do.*
+
+**Overlay**:
+- Added a "Counters" section to Options > Overlay, to choose which counters are shown for you and for your opponent.\
+  *Every counter can be left on "Auto" to keep showing it only when it's relevant, or forced to always show or never show. Both Hearthstone and Battlegrounds counters are covered. Tick "Advanced options" at the bottom of the Options menu to find it.*
+
+**Streaming:**
+- Added support for hoverable dual hero powers in the Twitch Extension.
+
 ## **Release v1.54.3 - 2026-08-03**
 **Hearthstone**:
 - Fixed performance issues related to The OutFinder that caused small mouse freezes.

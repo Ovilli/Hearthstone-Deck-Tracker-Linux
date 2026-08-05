@@ -76,7 +76,8 @@ namespace Hearthstone_Deck_Tracker.Live
 				Deck = boardState?.Player?.Deck,
 				GameType = gameType,
 				Rank = rank ?? 0,
-				LegendRank = legendRank ?? 0
+				LegendRank = legendRank ?? 0,
+				HearthstoneBuild = Core.Game.MetaData.HearthstoneBuild
 			};
 		}
 
@@ -96,6 +97,18 @@ namespace Hearthstone_Deck_Tracker.Live
 				return 0;
 			var card = Database.GetCardFromId(e.CardId);
 			return card?.DbfId ?? 0;
+		}
+
+		private int? DbfIdOrNull(Entity? e)
+		{
+			var dbfId = DbfId(e);
+			return dbfId != 0 ? dbfId : (int?)null;
+		}
+
+		private int? DbfIdOrNull(BattlegroundsTeammateBoardStateEntity? e)
+		{
+			var dbfId = DbfId(e);
+			return dbfId != 0 ? dbfId : (int?)null;
 		}
 
 		private int ZonePosition(Entity e) => e.GetTag(GameTag.ZONE_POSITION);
@@ -119,7 +132,27 @@ namespace Hearthstone_Deck_Tracker.Live
 
 		private Entity? Find(Player p, int entityId) => p.PlayerEntities.FirstOrDefault(x => x.Id == entityId);
 
-		private Entity? FindHeroPower(Player p) => p.PlayerEntities.FirstOrDefault(x => x.IsHeroPower && x.IsInPlay);
+		private Entity? FindHeroPower(Player p)
+			=> p.PlayerEntities.FirstOrDefault(x => x.IsHeroPower && x.IsInPlay && x.GetTag(GameTag.ADDITIONAL_HERO_POWER_INDEX) == 0);
+
+		// a hero power position can be occupied by a hero power, a hero power quest reward or a hero
+		// power trinket, all keyed by ADDITIONAL_HERO_POWER_INDEX (0 = bottom/only, 1 = top)
+		private int? BgsHeroPowerSlot(Player player, int index)
+		{
+			var questReward = player.QuestRewards.FirstOrDefault(x =>
+				x.HasTag(GameTag.BACON_IS_HEROPOWER_QUESTREWARD) && x.GetTag(GameTag.ADDITIONAL_HERO_POWER_INDEX) == index);
+			if(questReward != null)
+				return questReward.Card.DbfId;
+			// the game treats any index >= 1 as the secondary trinket slot (ZoneBattlegroundTrinket)
+			var trinket = player.Trinkets.FirstOrDefault(x =>
+				x.GetTag(GameTag.TAG_SCRIPT_DATA_NUM_6) == TrinketHeroPowerSlot &&
+				(index == 0 ? x.GetTag(GameTag.ADDITIONAL_HERO_POWER_INDEX) == 0 : x.GetTag(GameTag.ADDITIONAL_HERO_POWER_INDEX) >= 1));
+			if(trinket != null)
+				return trinket.Card.DbfId;
+			var heroPower = player.PlayerEntities.FirstOrDefault(x =>
+				x.IsHeroPower && x.IsInPlay && x.GetTag(GameTag.ADDITIONAL_HERO_POWER_INDEX) == index);
+			return heroPower != null ? DbfId(heroPower) : (int?)null;
+		}
 
 		private BoardStateQuest? Quest(Entity questEntity)
 		{
@@ -154,16 +187,6 @@ namespace Hearthstone_Deck_Tracker.Live
 			return player.QuestRewards.FirstOrDefault(x => x.HasTag(GameTag.BACON_IS_HEROPOWER_QUESTREWARD) == heroPower)?.Card.DbfId;
 		}
 
-		private int? BgsSecondHeroPower(Player player)
-		{
-			var entityId = player.Hero?.GetTag(GameTag.ADDITIONAL_HERO_POWER_ENTITY_1) ?? 0;
-			if(entityId == 0)
-				return null;
-
-			var secondHeroPower = player.PlayerEntities.FirstOrDefault(x => x.Id == entityId);
-			return secondHeroPower?.Card.DbfId;
-		}
-
 		private const int TrinketFirstSlot = 1;
 		private const int TrinketSecondSlot = 2;
 		private const int TrinketHeroPowerSlot = 3;
@@ -178,7 +201,14 @@ namespace Hearthstone_Deck_Tracker.Live
 			return trinketEntity?.Card.DbfId;
 		}
 
-		private int? BgsAnomaly(Entity? game) => BattlegroundsUtils.GetBattlegroundsAnomalyDbfId(game);
+		private int? BgsAnomaly(Entity? game)
+		{
+			// the "Discover a Dark Gift" button takes the same slot as anomalies
+			if(game?.GetTag(GameTag.BACON_DARK_GIFTS_ACTIVE) == 1)
+				return Database.GetCardFromId(HearthDb.CardIds.NonCollectible.Neutral.DarkGifts1)?.DbfId;
+
+			return BattlegroundsUtils.GetBattlegroundsAnomalyDbfId(game);
+		}
 
 		// Return the dbf id for an entity, but blacklisted against common hero cards we don't want want to show in the overlay.
 		private int HeroDbfId(Entity? entity)
@@ -301,7 +331,7 @@ namespace Hearthstone_Deck_Tracker.Live
 						Cards = SortedDbfIds(player.Hand),
 						Size = player.HandCount
 					},
-					HeroPower = BgsQuestReward(player, true) ?? DbfId(FindHeroPower(player)),
+					HeroPower = BgsQuestReward(player, true) ?? DbfIdOrNull(FindHeroPower(player)),
 					Weapon = playerWeapon != 0 ? playerWeapon : (BgsQuestReward(player, false) ?? BuddyDbfId(player) ?? 0),
 					Fatigue = Core.Game.PlayerEntity.GetTag(GameTag.FATIGUE)
 				},
@@ -318,11 +348,12 @@ namespace Hearthstone_Deck_Tracker.Live
 					},
 					Secrets = SortedDbfIds(opponent.PlayerEntities.Where(x => x.IsInSecret)),
 					Hero = HeroDbfId(Find(opponent, HeroId(Core.Game.OpponentEntity))),
-					HeroPower = BgsQuestReward(opponent, true) ?? DbfId(FindHeroPower(opponent)),
+					HeroPower = BgsQuestReward(opponent, true) ?? DbfIdOrNull(FindHeroPower(opponent)),
 					Weapon = opponentWeapon != 0 ? opponentWeapon : (BgsQuestReward(opponent, false) ?? BuddyDbfId(opponent) ?? 0),
 					Fatigue = Core.Game.OpponentEntity.GetTag(GameTag.FATIGUE)
 				},
 				GameType = gameType,
+				HearthstoneBuild = Core.Game.MetaData.HearthstoneBuild,
 				TraditionalAnomaly = anomaly,
 			};
 		}
@@ -347,16 +378,23 @@ namespace Hearthstone_Deck_Tracker.Live
 				? SortedDbfIds(specialShopState!.BoardCards)
 				: SortedDbfIds(opponent.Board.Where(x => x.TakesBoardSlot));
 
+			// the primary hero power sits at the bottom for the player and at the top for the opponent
+			var playerHeroPowerPrimary = BgsHeroPowerSlot(player, 0);
+			var playerHeroPowerSecondary = BgsHeroPowerSlot(player, 1);
+			var opponentHeroPowerPrimary = BgsHeroPowerSlot(opponent, 0);
+			var opponentHeroPowerSecondary = BgsHeroPowerSlot(opponent, 1);
+
 			return new Tuple<BoardStatePlayer, BoardStatePlayer>(
 				new BoardStatePlayer
 				{
 					Board = SortedDbfIds(player.Board.Where(x => x.TakesBoardSlot)),
 					Hero = HeroDbfId(playerEntity != null ? Find(player, HeroId(playerEntity)) : null),
-					HeroPower = BgsQuestReward(player, true) ?? BgsTrinket(player, TrinketHeroPowerSlot) ?? DbfId(FindHeroPower(player)),
+					HeroPower = playerHeroPowerSecondary == null ? playerHeroPowerPrimary : null,
+					HeroPowerTop = playerHeroPowerSecondary,
+					HeroPowerBottom = playerHeroPowerSecondary != null ? playerHeroPowerPrimary : null,
 					Weapon = playerWeapon != 0 ? playerWeapon :
 						BgsQuestReward(player, false) ??
-						BuddyDbfId(player) ??
-						BgsSecondHeroPower(player) ?? 0,
+						BuddyDbfId(player) ?? 0,
 					FirstTrinket = BgsTrinket(player, TrinketFirstSlot),
 					SecondTrinket = BgsTrinket(player, TrinketSecondSlot),
 					Hand = new BoardStateHand
@@ -370,11 +408,12 @@ namespace Hearthstone_Deck_Tracker.Live
 				{
 					Board = opponentBoard,
 					Hero = HeroDbfId(opponentEntity != null ? Find(opponent, HeroId(opponentEntity)) : null),
-					HeroPower = BgsQuestReward(opponent, true) ?? BgsTrinket(opponent, TrinketHeroPowerSlot) ?? DbfId(FindHeroPower(opponent)),
+					HeroPower = opponentHeroPowerSecondary == null ? opponentHeroPowerPrimary : null,
+					HeroPowerTop = opponentHeroPowerSecondary != null ? opponentHeroPowerPrimary : null,
+					HeroPowerBottom = opponentHeroPowerSecondary,
 					Weapon = opponentWeapon != 0 ? opponentWeapon :
 						BgsQuestReward(opponent, false) ??
-						BuddyDbfId(opponent) ??
-						BgsSecondHeroPower(opponent) ?? 0,
+						BuddyDbfId(opponent) ?? 0,
 					FirstTrinket = BgsTrinket(opponent, TrinketFirstSlot),
 					SecondTrinket = BgsTrinket(opponent, TrinketSecondSlot),
 					Hand = new BoardStateHand
@@ -411,12 +450,29 @@ namespace Hearthstone_Deck_Tracker.Live
 			var greaterTrinket = inPlay.FirstOrDefault(entity => GetTag(entity, GameTag.CARDTYPE) == (int)CardType.BATTLEGROUND_TRINKET && GetTag(entity, GameTag.TAG_SCRIPT_DATA_NUM_6) == TrinketSecondSlot);
 
 			var hero = inPlay.FirstOrDefault(entity => GetTag(entity, GameTag.CARDTYPE) == (int)CardType.HERO);
-			var heroPower =
-				inPlay.FirstOrDefault(entity => GetTag(entity, GameTag.CARDTYPE) == (int)CardType.HERO_POWER)
-				?? inPlay.FirstOrDefault(entity => GetTag(entity, GameTag.CARDTYPE) == (int)CardType.BATTLEGROUND_TRINKET && GetTag(entity, GameTag.TAG_SCRIPT_DATA_NUM_6) == TrinketHeroPowerSlot);
+
+			BattlegroundsTeammateBoardStateEntity? HeroPowerSlot(int index) =>
+				inPlay.FirstOrDefault(entity =>
+					GetTag(entity, GameTag.CARDTYPE) == (int)CardType.BATTLEGROUND_QUEST_REWARD
+					&& GetTag(entity, GameTag.BACON_IS_HEROPOWER_QUESTREWARD) > 0
+					&& GetTag(entity, GameTag.ADDITIONAL_HERO_POWER_INDEX) == index)
+				?? inPlay.FirstOrDefault(entity =>
+					GetTag(entity, GameTag.CARDTYPE) == (int)CardType.BATTLEGROUND_TRINKET
+					&& GetTag(entity, GameTag.TAG_SCRIPT_DATA_NUM_6) == TrinketHeroPowerSlot
+					&& (index == 0
+						? GetTag(entity, GameTag.ADDITIONAL_HERO_POWER_INDEX) == 0
+						: GetTag(entity, GameTag.ADDITIONAL_HERO_POWER_INDEX) >= 1))
+				?? inPlay.FirstOrDefault(entity =>
+					GetTag(entity, GameTag.CARDTYPE) == (int)CardType.HERO_POWER
+					&& GetTag(entity, GameTag.ADDITIONAL_HERO_POWER_INDEX) == index);
+
+			var heroPowerPrimary = HeroPowerSlot(0);
+			var heroPowerSecondary = HeroPowerSlot(1);
 
 			var weapon = inPlay.FirstOrDefault(entity => GetTag(entity, GameTag.CARDTYPE) == (int)CardType.WEAPON)
-				?? inPlay.FirstOrDefault(entity => GetTag(entity, GameTag.CARDTYPE) == (int)CardType.BATTLEGROUND_QUEST_REWARD);
+				?? inPlay.FirstOrDefault(entity =>
+					GetTag(entity, GameTag.CARDTYPE) == (int)CardType.BATTLEGROUND_QUEST_REWARD
+					&& GetTag(entity, GameTag.BACON_IS_HEROPOWER_QUESTREWARD) == 0);
 
 			var buddyDbfId = 0;
 			if(Core.Game.BattlegroundsBuddiesEnabled)
@@ -442,7 +498,9 @@ namespace Hearthstone_Deck_Tracker.Live
 			{
 				Board = SortedDbfIds(board),
 				Hero = DbfId(hero),
-				HeroPower = DbfId(heroPower),
+				HeroPower = heroPowerSecondary == null ? DbfIdOrNull(heroPowerPrimary) : null,
+				HeroPowerTop = DbfIdOrNull(heroPowerSecondary),
+				HeroPowerBottom = heroPowerSecondary != null ? DbfIdOrNull(heroPowerPrimary) : null,
 				Weapon = weapon != null ? DbfId(weapon) : buddyDbfId,
 				FirstTrinket = DbfId(lesserTrinket),
 				SecondTrinket = DbfId(greaterTrinket),
@@ -485,6 +543,7 @@ namespace Hearthstone_Deck_Tracker.Live
 				Player = playerBoardState,
 				Opponent = opponentBoardState,
 				GameType = gameType,
+				HearthstoneBuild = Core.Game.MetaData.HearthstoneBuild,
 				BattlegroundsAnomaly = BgsAnomaly(Core.Game.GameEntity),
 				BobsBuddyOutput = GetBobsBuddyState()
 			};

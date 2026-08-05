@@ -22,6 +22,9 @@ namespace Hearthstone_Deck_Tracker.Live.Data
 
 		[JsonProperty("game_type")]
 		public BnetGameType GameType { get; set; }
+
+		[JsonProperty("hearthstone_build", DefaultValueHandling = DefaultValueHandling.Ignore)]
+		public int? HearthstoneBuild { get; set; }
 	}
 
 	public class BoardState
@@ -34,6 +37,9 @@ namespace Hearthstone_Deck_Tracker.Live.Data
 
 		[JsonProperty("game_type")]
 		public BnetGameType GameType { get; set; }
+
+		[JsonProperty("hearthstone_build", DefaultValueHandling = DefaultValueHandling.Ignore)]
+		public int? HearthstoneBuild { get; set; }
 
 		[JsonProperty("traditional_anomaly", DefaultValueHandling = DefaultValueHandling.Ignore)]
 		public int? TraditionalAnomaly { get; set; }
@@ -73,7 +79,13 @@ namespace Hearthstone_Deck_Tracker.Live.Data
 		public int Hero { get; set; }
 
 		[JsonProperty("hero_power", DefaultValueHandling = DefaultValueHandling.Ignore)]
-		public int HeroPower { get; set; }
+		public int? HeroPower { get; set; }
+
+		[JsonProperty("hero_power_top", DefaultValueHandling = DefaultValueHandling.Ignore)]
+		public int? HeroPowerTop { get; set; }
+
+		[JsonProperty("hero_power_bottom", DefaultValueHandling = DefaultValueHandling.Ignore)]
+		public int? HeroPowerBottom { get; set; }
 
 		[JsonProperty("weapon", DefaultValueHandling = DefaultValueHandling.Ignore)]
 		public int Weapon { get; set; }
@@ -98,6 +110,10 @@ namespace Hearthstone_Deck_Tracker.Live.Data
 			if(Hero != other?.Hero)
 				return false;
 			if(HeroPower != other.HeroPower)
+				return false;
+			if(HeroPowerTop != other.HeroPowerTop)
+				return false;
+			if(HeroPowerBottom != other.HeroPowerBottom)
 				return false;
 			if(Weapon != other.Weapon)
 				return false;
